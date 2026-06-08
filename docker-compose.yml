@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: calculator-db
+    environment:
+      POSTGRES_USER: calculator
+      POSTGRES_PASSWORD: calculator
+      POSTGRES_DB: calculator
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+
+volumes:
+  postgres_data:
