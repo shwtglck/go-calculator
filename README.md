@@ -1,149 +1,150 @@
-# Калькулятор-сервис (учебный проект)
+# Go Calculator — микросервисный калькулятор
 
-Два микросервиса на Go:
+Учебный проект: HTTP-калькулятор на Go с двумя микросервисами, PostgreSQL и Kafka.
 
-1. **API** — принимает HTTP-запросы, считает результат, обращается к storage-сервису
-2. **Storage** — сохраняет и читает данные из PostgreSQL
+## Архитектура
 
-Сейчас сервисы общаются по **HTTP**. Структура проекта подготовлена для дальнейшего внедрения **gRPC** и **Kafka**.
+```
+                    POST /calculate
+Клиент ──────────────────────────────► API Service (:8080)
+                                           │
+                                           ├─ calculator.Calculate()
+                                           └─ Kafka Producer
+                                                  │
+                                                  ▼
+                                           topic: calculations
+                                                  │
+                                                  ▼
+                                        Storage Service (:8081)
+                                           │
+                                           ├─ Kafka Consumer
+                                           └─ PostgreSQL (:5432)
+
+                    GET /calculations
+Клиент ──────────────────────────────► API Service ──HTTP──► Storage Service ──► PostgreSQL
+```
+
+| Компонент | Порт | Назначение |
+|-----------|------|------------|
+| API Service | 8080 | Публичный HTTP API |
+| Storage Service | 8081 | Внутренний HTTP API + Kafka consumer |
+| PostgreSQL | 5432 | Хранение вычислений |
+| Kafka | 9092 | Асинхронная передача событий |
+| Kafka UI | 8082 | Веб-интерфейс для просмотра топиков |
+
+### Потоки данных
+
+- **POST `/calculate`** — API считает результат и отправляет событие в Kafka. Storage consumer сохраняет запись в PostgreSQL.
+- **GET `/calculations`** — API запрашивает историю у Storage по HTTP.
 
 ---
 
 ## Структура проекта
 
 ```
-newstart/
+go-calculator/
 ├── cmd/
-│   ├── api/
-│   │   └── main.go                         # Запуск HTTP API
-│   └── storage/
-│       └── main.go                         # Запуск сервиса хранения
+│   ├── api/main.go              # Точка входа API-сервиса
+│   └── storage/main.go          # Точка входа Storage-сервиса
 ├── internal/
 │   ├── api/
-│   │   ├── handler/                        # Публичные HTTP-эндпоинты
-│   │   ├── client/                         # Клиент к storage (HTTP / gRPC)
-│   │   └── kafka/                          # Заготовка под Kafka producer
+│   │   ├── handler/             # HTTP-обработчики (/calculate, /calculations)
+│   │   ├── client/              # HTTP/gRPC клиент к Storage (gRPC — заготовка)
+│   │   └── kafka/               # Kafka Producer
 │   ├── storage/
-│   │   ├── handler/                        # Внутренние HTTP-эндпоинты
-│   │   ├── repository/                     # PostgreSQL
-│   │   ├── transport/grpc/                 # Заготовка под gRPC server
-│   │   └── kafka/                          # Заготовка под Kafka consumer
-│   ├── calculator/                         # Математика
-│   └── model/                              # Общая модель Calculation
-├── proto/
-│   └── storage/v1/storage.proto            # Контракт для будущего gRPC
-├── migrations/
-│   └── 001_init.sql
-├── docker-compose.yml
+│   │   ├── handler/             # HTTP-обработчики Storage
+│   │   ├── repository/          # PostgreSQL
+│   │   ├── kafka/               # Kafka Consumer
+│   │   └── transport/grpc/      # gRPC server (заготовка)
+│   ├── calculator/              # Бизнес-логика: математика
+│   └── model/                   # Общая модель Calculation
+├── proto/storage/v1/            # Protobuf-контракт для будущего gRPC
+├── migrations/                  # SQL-миграции
+├── docker-compose.yml           # PostgreSQL + Kafka + Kafka UI
 ├── go.mod
 └── README.md
 ```
 
-### Как это работает
-
-```
-Клиент → API (8080) → Storage (8081) → PostgreSQL
-```
-
-| Сервис | Порт | Ответственность |
-|--------|------|-----------------|
-| `cmd/api` | 8080 | POST `/calculate`, GET `/calculations` |
-| `cmd/storage` | 8081 | POST/GET `/calculations`, работа с БД |
-
 ---
 
-## API (публичный, порт 8080)
+## API
 
-### POST `/calculate` — посчитать и сохранить
+### POST `/calculate`
 
-**Запрос:**
 ```json
-{
-  "a": 10,
-  "b": 5,
-  "operator": "+"
-}
+{ "a": 10, "b": 5, "operator": "+" }
 ```
 
-**Ответ:**
+Ответ:
+
 ```json
-{
-  "id": 1,
-  "a": 10,
-  "b": 5,
-  "operator": "+",
-  "result": 15,
-  "created_at": "2026-06-08T12:00:00Z"
-}
+{ "a": 10, "b": 5, "operator": "+", "result": 15 }
 ```
 
-### GET `/calculations` — получить историю
+### GET `/calculations`
+
+Возвращает историю вычислений из PostgreSQL.
 
 ---
 
-## Storage API (внутренний, порт 8081)
+## Быстрый старт
 
-| Метод | Путь | Описание |
-|-------|------|----------|
-| POST | `/calculations` | Сохранить вычисление |
-| GET | `/calculations` | Получить историю |
-| GET | `/health` | Проверка состояния |
-
----
-
-## Как запустить
-
-### Шаг 1. База данных
+### 1. Инфраструктура (PostgreSQL + Kafka)
 
 ```powershell
 docker compose up -d
 ```
 
-### Шаг 2. Storage-сервис (в первом терминале)
+### 2. Storage-сервис
 
 ```powershell
 go run ./cmd/storage
 ```
 
-### Шаг 3. API-сервис (во втором терминале)
+### 3. API-сервис
 
 ```powershell
 go run ./cmd/api
 ```
 
-### Шаг 4. Проверка
+### 4. Проверка
 
 ```powershell
 curl -X POST http://localhost:8080/calculate -H "Content-Type: application/json" -d "{\"a\": 10, \"b\": 5, \"operator\": \"+\"}"
 curl http://localhost:8080/calculations
 ```
 
+Kafka UI: http://localhost:8082
+
 ---
 
 ## Переменные окружения
 
-| Переменная | Сервис | По умолчанию | Описание |
-|------------|--------|--------------|----------|
-| `API_PORT` | api | `8080` | Порт API-сервиса |
-| `STORAGE_PORT` | storage | `8081` | Порт storage-сервиса |
-| `STORAGE_URL` | api | `http://localhost:8081` | Адрес storage-сервиса |
-| `STORAGE_TRANSPORT` | api | `http` | Транспорт: `http` или `grpc` (пока только http) |
-| `DATABASE_URL` | storage | `postgres://calculator:calculator@localhost:5432/calculator?sslmode=disable` | PostgreSQL |
+| Переменная | Сервис | По умолчанию |
+|------------|--------|--------------|
+| `API_PORT` | api | `8080` |
+| `STORAGE_PORT` | storage | `8081` |
+| `STORAGE_URL` | api | `http://localhost:8081` |
+| `KAFKA_BROKER` | api | `localhost:9092` |
+| `DATABASE_URL` | storage | `postgres://calculator:calculator@localhost:5432/calculator?sslmode=disable` |
 
 ---
 
-## Что подготовлено для будущего
+## Стек
 
-| Технология | Где лежит | Статус |
-|------------|-----------|--------|
-| gRPC контракт | `proto/storage/v1/storage.proto` | Описан, не подключён |
-| gRPC client | `internal/api/client/grpc.go` | Заготовка |
-| gRPC server | `internal/storage/transport/grpc/` | Заготовка |
-| Kafka producer | `internal/api/kafka/` | Заготовка |
-| Kafka consumer | `internal/storage/kafka/` | Заготовка |
+| Технология | Статус |
+|------------|--------|
+| Go | ✅ |
+| HTTP (net/http) | ✅ |
+| PostgreSQL (pgx) | ✅ |
+| Kafka (segmentio/kafka-go) | ✅ |
+| Docker Compose | ✅ |
+| gRPC | 🔜 заготовка (proto + stubs) |
 
 ---
 
-## Что можно сказать ментору
+## Сборка
 
-«Проект разделён на два сервиса: `cmd/api` для HTTP API и `cmd/storage` для работы с PostgreSQL. API не ходит в базу напрямую — только через storage-сервис. Есть интерфейс клиента, proto-файл и заготовки под gRPC и Kafka.»
+```powershell
+go build ./...
+```
