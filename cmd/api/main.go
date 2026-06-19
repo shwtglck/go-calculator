@@ -8,6 +8,7 @@ import (
 
 	"newstart/internal/api/client"
 	apihandler "newstart/internal/api/handler"
+	apikafka "newstart/internal/api/kafka"
 )
 
 func main() {
@@ -19,7 +20,19 @@ func main() {
 		log.Fatalf("ошибка клиента storage-сервиса: %v", err)
 	}
 
-	h := apihandler.New(storageClient)
+	broker := os.Getenv("KAFKA_BROKER")
+	if broker == "" {
+		broker = "localhost:9092"
+	}
+
+	producer := apikafka.NewProducer(broker)
+	defer func() {
+		if err := producer.Close(); err != nil {
+			log.Printf("ошибка закрытия kafka producer: %v", err)
+		}
+	}()
+
+	h := apihandler.New(storageClient, producer)
 
 	mux := http.NewServeMux()
 	h.Register(mux)

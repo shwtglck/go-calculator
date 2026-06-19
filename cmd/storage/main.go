@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 
+	storagekafka "newstart/internal/storage/kafka"
 	storagehandler "newstart/internal/storage/handler"
 	"newstart/internal/storage/repository"
 )
@@ -19,6 +20,20 @@ func main() {
 		log.Fatalf("ошибка базы данных: %v", err)
 	}
 	defer repo.Close()
+
+	consumer := storagekafka.NewConsumer("localhost:9092", repo)
+	defer func() {
+		if err := consumer.Close(); err != nil {
+			log.Printf("ошибка закрытия kafka consumer: %v", err)
+		}
+	}()
+
+	go func() {
+		log.Printf("kafka consumer запущен: broker=localhost:9092, topic=calculations")
+		if err := consumer.Run(ctx); err != nil {
+			log.Printf("kafka consumer остановился: %v", err)
+		}
+	}()
 
 	h := storagehandler.New(repo)
 

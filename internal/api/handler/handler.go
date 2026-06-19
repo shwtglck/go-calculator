@@ -5,18 +5,23 @@ import (
 	"net/http"
 
 	"newstart/internal/api/client"
+	apikafka "newstart/internal/api/kafka"
 	"newstart/internal/calculator"
 	"newstart/internal/model"
 )
 
 // Handler обрабатывает публичные HTTP-запросы API-сервиса.
 type Handler struct {
-	storage client.Storage
+	storage  client.Storage
+	producer *apikafka.Producer
 }
 
 // New создаёт HTTP-обработчик API-сервиса.
-func New(storage client.Storage) *Handler {
-	return &Handler{storage: storage}
+func New(storage client.Storage, producer *apikafka.Producer) *Handler {
+	return &Handler{
+		storage:  storage,
+		producer: producer,
+	}
 }
 
 // Register добавляет маршруты API-сервиса.
@@ -54,9 +59,15 @@ func (h *Handler) calculate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	calc, err := h.storage.SaveCalculation(r.Context(), req.A, req.B, req.Operator, result)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, errorResponse{Error: "storage-сервис недоступен"})
+	calc := model.Calculation{
+		OperandA: req.A,
+		OperandB: req.B,
+		Operator: req.Operator,
+		Result:   result,
+	}
+
+	if err := h.producer.SendCalculation(r.Context(), calc); err != nil {
+		writeJSON(w, http.StatusBadGateway, errorResponse{Error: "не удалось отправить в kafka"})
 		return
 	}
 
