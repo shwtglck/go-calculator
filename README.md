@@ -1,47 +1,62 @@
 # Калькулятор-сервис (учебный проект)
 
-Простой HTTP-сервис на Go, который:
-1. Принимает два числа и знак операции (`+`, `-`, `*`, `/`)
-2. Считает результат
-3. Сохраняет операцию в PostgreSQL
-4. Отдаёт историю всех вычислений
+Два микросервиса на Go:
+
+1. **API** — принимает HTTP-запросы, считает результат, обращается к storage-сервису
+2. **Storage** — сохраняет и читает данные из PostgreSQL
+
+Сейчас сервисы общаются по **HTTP**. Структура проекта подготовлена для дальнейшего внедрения **gRPC** и **Kafka**.
 
 ---
 
-## Что здесь за файлы (простыми словами)
+## Структура проекта
 
-| Файл | Зачем нужен |
-|------|-------------|
-| `main.go` | Точка входа: запускает сервер и подключает эндпоинты |
-| `handlers.go` | Обрабатывает HTTP-запросы (POST и GET) |
-| `calculator.go` | Логика математики: `10 + 5 = 15` |
-| `storage.go` | Работа с базой данных: сохранить и прочитать записи |
-| `migrations/001_init.sql` | SQL-скрипт, который создаёт таблицу в PostgreSQL |
-| `docker-compose.yml` | Запускает PostgreSQL в контейнере (проще, чем ставить вручную) |
+```
+newstart/
+├── cmd/
+│   ├── api/
+│   │   └── main.go                         # Запуск HTTP API
+│   └── storage/
+│       └── main.go                         # Запуск сервиса хранения
+├── internal/
+│   ├── api/
+│   │   ├── handler/                        # Публичные HTTP-эндпоинты
+│   │   ├── client/                         # Клиент к storage (HTTP / gRPC)
+│   │   └── kafka/                          # Заготовка под Kafka producer
+│   ├── storage/
+│   │   ├── handler/                        # Внутренние HTTP-эндпоинты
+│   │   ├── repository/                     # PostgreSQL
+│   │   ├── transport/grpc/                 # Заготовка под gRPC server
+│   │   └── kafka/                          # Заготовка под Kafka consumer
+│   ├── calculator/                         # Математика
+│   └── model/                              # Общая модель Calculation
+├── proto/
+│   └── storage/v1/storage.proto            # Контракт для будущего gRPC
+├── migrations/
+│   └── 001_init.sql
+├── docker-compose.yml
+├── go.mod
+└── README.md
+```
+
+### Как это работает
+
+```
+Клиент → API (8080) → Storage (8081) → PostgreSQL
+```
+
+| Сервис | Порт | Ответственность |
+|--------|------|-----------------|
+| `cmd/api` | 8080 | POST `/calculate`, GET `/calculations` |
+| `cmd/storage` | 8081 | POST/GET `/calculations`, работа с БД |
 
 ---
 
-## Что такое «таблица» в базе данных
-
-Представь Excel-таблицу:
-
-| id | operand_a | operand_b | operator | result | created_at |
-|----|-----------|-----------|----------|--------|------------|
-| 1  | 10        | 5         | +        | 15     | 2026-06-08 |
-| 2  | 20        | 4         | /        | 5      | 2026-06-08 |
-
-- **Строка** = одно вычисление
-- **Столбец** = одно поле (первое число, второе число, знак, результат, время)
-
-Файл `migrations/001_init.sql` как раз говорит PostgreSQL: «создай такую таблицу».
-
----
-
-## API (как общаться с сервисом)
+## API (публичный, порт 8080)
 
 ### POST `/calculate` — посчитать и сохранить
 
-**Запрос (JSON в теле):**
+**Запрос:**
 ```json
 {
   "a": 10,
@@ -62,88 +77,73 @@
 }
 ```
 
-### GET `/calculations` — получить всю историю
-
-**Ответ:**
-```json
-[
-  {
-    "id": 1,
-    "a": 10,
-    "b": 5,
-    "operator": "+",
-    "result": 15,
-    "created_at": "2026-06-08T12:00:00Z"
-  }
-]
-```
+### GET `/calculations` — получить историю
 
 ---
 
-## Как запустить (пошагово)
+## Storage API (внутренний, порт 8081)
 
-### Шаг 1. Установи Docker Desktop (если ещё нет)
+| Метод | Путь | Описание |
+|-------|------|----------|
+| POST | `/calculations` | Сохранить вычисление |
+| GET | `/calculations` | Получить историю |
+| GET | `/health` | Проверка состояния |
 
-Docker позволяет запустить PostgreSQL одной командой, без сложной настройки.
+---
 
-Скачать: https://www.docker.com/products/docker-desktop/
+## Как запустить
 
-### Шаг 2. Запусти базу данных
-
-В папке проекта выполни:
+### Шаг 1. База данных
 
 ```powershell
 docker compose up -d
 ```
 
-Это поднимет PostgreSQL на порту `5432` и автоматически создаст таблицу.
-
-Проверка, что база жива:
-```powershell
-docker ps
-```
-
-### Шаг 3. Запусти Go-сервис
+### Шаг 2. Storage-сервис (в первом терминале)
 
 ```powershell
-go run .
+go run ./cmd/storage
 ```
 
-Сервер будет на `http://localhost:8080`.
+### Шаг 3. API-сервис (во втором терминале)
 
-### Шаг 4. Проверь работу
+```powershell
+go run ./cmd/api
+```
 
-**Посчитать:**
+### Шаг 4. Проверка
+
 ```powershell
 curl -X POST http://localhost:8080/calculate -H "Content-Type: application/json" -d "{\"a\": 10, \"b\": 5, \"operator\": \"+\"}"
-```
-
-**Получить историю:**
-```powershell
 curl http://localhost:8080/calculations
 ```
 
 ---
 
-## Переменные окружения (необязательно)
+## Переменные окружения
 
-По умолчанию всё уже настроено. Можно переопределить:
-
-| Переменная | Значение по умолчанию |
-|------------|----------------------|
-| `DATABASE_URL` | `postgres://calculator:calculator@localhost:5432/calculator?sslmode=disable` |
-| `PORT` | `8080` |
+| Переменная | Сервис | По умолчанию | Описание |
+|------------|--------|--------------|----------|
+| `API_PORT` | api | `8080` | Порт API-сервиса |
+| `STORAGE_PORT` | storage | `8081` | Порт storage-сервиса |
+| `STORAGE_URL` | api | `http://localhost:8081` | Адрес storage-сервиса |
+| `STORAGE_TRANSPORT` | api | `http` | Транспорт: `http` или `grpc` (пока только http) |
+| `DATABASE_URL` | storage | `postgres://calculator:calculator@localhost:5432/calculator?sslmode=disable` | PostgreSQL |
 
 ---
 
-## Если что-то не работает
+## Что подготовлено для будущего
 
-1. **Сервер пишет «ошибка базы данных»** — сначала запусти `docker compose up -d`
-2. **Docker не установлен** — установи Docker Desktop или поставь PostgreSQL вручную и создай таблицу из `migrations/001_init.sql`
-3. **Порт 5432 занят** — возможно, у тебя уже запущен другой PostgreSQL
+| Технология | Где лежит | Статус |
+|------------|-----------|--------|
+| gRPC контракт | `proto/storage/v1/storage.proto` | Описан, не подключён |
+| gRPC client | `internal/api/client/grpc.go` | Заготовка |
+| gRPC server | `internal/storage/transport/grpc/` | Заготовка |
+| Kafka producer | `internal/api/kafka/` | Заготовка |
+| Kafka consumer | `internal/storage/kafka/` | Заготовка |
 
 ---
 
 ## Что можно сказать ментору
 
-«Сервис на Go с двумя эндпоинтами: POST `/calculate` для вычисления и сохранения, GET `/calculations` для истории. Данные хранятся в PostgreSQL в таблице `calculations`.»
+«Проект разделён на два сервиса: `cmd/api` для HTTP API и `cmd/storage` для работы с PostgreSQL. API не ходит в базу напрямую — только через storage-сервис. Есть интерфейс клиента, proto-файл и заготовки под gRPC и Kafka.»

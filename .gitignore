@@ -1,0 +1,27 @@
+# Бинарники Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Тестовые артефакты
+*.test
+*.out
+coverage.out
+
+# IDE и редакторы
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ОС
+.DS_Store
+Thumbs.db
+
+# Переменные окружения (секреты не коммитим)
+.env
+.env.local

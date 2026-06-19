@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package storage.v1;
+
+option go_package = "newstart/gen/storage/v1;storagev1";
+
+// Контракт storage-сервиса для будущей gRPC-реализации.
+service StorageService {
+  rpc SaveCalculation(SaveCalculationRequest) returns (Calculation);
+  rpc ListCalculations(ListCalculationsRequest) returns (ListCalculationsResponse);
+}
+
+message SaveCalculationRequest {
+  double a = 1;
+  double b = 2;
+  string operator = 3;
+  double result = 4;
+}
+
+message ListCalculationsRequest {}
+
+message ListCalculationsResponse {
+  repeated Calculation calculations = 1;
+}
+
+message Calculation {
+  int32 id = 1;
+  double a = 2;
+  double b = 3;
+  string operator = 4;
+  double result = 5;
+  string created_at = 6;
+}

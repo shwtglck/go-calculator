@@ -1,31 +1,22 @@
-package main
+package repository
 
 import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"newstart/internal/model"
 )
 
-// Calculation — одна запись в базе данных (одно вычисление).
-type Calculation struct {
-	ID        int       `json:"id"`
-	OperandA  float64   `json:"a"`
-	OperandB  float64   `json:"b"`
-	Operator  string    `json:"operator"`
-	Result    float64   `json:"result"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Storage отвечает за работу с PostgreSQL.
-type Storage struct {
+// Postgres хранит и читает вычисления в PostgreSQL.
+type Postgres struct {
 	pool *pgxpool.Pool
 }
 
-// NewStorage подключается к базе по строке DATABASE_URL из переменных окружения.
-func NewStorage(ctx context.Context) (*Storage, error) {
+// NewPostgres подключается к базе по строке DATABASE_URL.
+func NewPostgres(ctx context.Context) (*Postgres, error) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://calculator:calculator@localhost:5432/calculator?sslmode=disable"
@@ -41,23 +32,24 @@ func NewStorage(ctx context.Context) (*Storage, error) {
 		return nil, fmt.Errorf("проверка соединения с базой: %w", err)
 	}
 
-	return &Storage{pool: pool}, nil
+	return &Postgres{pool: pool}, nil
 }
 
-func (s *Storage) Close() {
-	s.pool.Close()
+// Close закрывает пул соединений с базой данных.
+func (p *Postgres) Close() {
+	p.pool.Close()
 }
 
 // SaveCalculation сохраняет результат вычисления в таблицу calculations.
-func (s *Storage) SaveCalculation(ctx context.Context, a, b float64, operator string, result float64) (Calculation, error) {
+func (p *Postgres) SaveCalculation(ctx context.Context, a, b float64, operator string, result float64) (model.Calculation, error) {
 	const query = `
 		INSERT INTO calculations (operand_a, operand_b, operator, result)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, operand_a, operand_b, operator, result, created_at
 	`
 
-	var calc Calculation
-	err := s.pool.QueryRow(ctx, query, a, b, operator, result).Scan(
+	var calc model.Calculation
+	err := p.pool.QueryRow(ctx, query, a, b, operator, result).Scan(
 		&calc.ID,
 		&calc.OperandA,
 		&calc.OperandB,
@@ -66,29 +58,29 @@ func (s *Storage) SaveCalculation(ctx context.Context, a, b float64, operator st
 		&calc.CreatedAt,
 	)
 	if err != nil {
-		return Calculation{}, fmt.Errorf("сохранение вычисления: %w", err)
+		return model.Calculation{}, fmt.Errorf("сохранение вычисления: %w", err)
 	}
 
 	return calc, nil
 }
 
 // ListCalculations возвращает все записи из базы, от новых к старым.
-func (s *Storage) ListCalculations(ctx context.Context) ([]Calculation, error) {
+func (p *Postgres) ListCalculations(ctx context.Context) ([]model.Calculation, error) {
 	const query = `
 		SELECT id, operand_a, operand_b, operator, result, created_at
 		FROM calculations
 		ORDER BY created_at DESC
 	`
 
-	rows, err := s.pool.Query(ctx, query)
+	rows, err := p.pool.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("чтение вычислений: %w", err)
 	}
 	defer rows.Close()
 
-	calculations := make([]Calculation, 0)
+	calculations := make([]model.Calculation, 0)
 	for rows.Next() {
-		var calc Calculation
+		var calc model.Calculation
 		if err := rows.Scan(
 			&calc.ID,
 			&calc.OperandA,

@@ -1,11 +1,31 @@
-package main
+package handler
 
 import (
 	"encoding/json"
 	"net/http"
+
+	"newstart/internal/api/client"
+	"newstart/internal/calculator"
+	"newstart/internal/model"
 )
 
-// calculateRequest — то, что клиент отправляет в POST /calculate.
+// Handler обрабатывает публичные HTTP-запросы API-сервиса.
+type Handler struct {
+	storage client.Storage
+}
+
+// New создаёт HTTP-обработчик API-сервиса.
+func New(storage client.Storage) *Handler {
+	return &Handler{storage: storage}
+}
+
+// Register добавляет маршруты API-сервиса.
+func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("/calculate", h.calculate)
+	mux.HandleFunc("/calculations", h.listCalculations)
+	mux.HandleFunc("/health", h.health)
+}
+
 type calculateRequest struct {
 	A        float64 `json:"a"`
 	B        float64 `json:"b"`
@@ -16,11 +36,7 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-type handler struct {
-	storage *Storage
-}
-
-func (h *handler) calculate(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) calculate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "нужен POST запрос"})
 		return
@@ -32,7 +48,7 @@ func (h *handler) calculate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := Calculate(req.A, req.B, req.Operator)
+	result, err := calculator.Calculate(req.A, req.B, req.Operator)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
@@ -40,14 +56,14 @@ func (h *handler) calculate(w http.ResponseWriter, r *http.Request) {
 
 	calc, err := h.storage.SaveCalculation(r.Context(), req.A, req.B, req.Operator, result)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "не удалось сохранить в базу"})
+		writeJSON(w, http.StatusBadGateway, errorResponse{Error: "storage-сервис недоступен"})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, calc)
 }
 
-func (h *handler) listCalculations(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) listCalculations(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "нужен GET запрос"})
 		return
@@ -55,15 +71,19 @@ func (h *handler) listCalculations(w http.ResponseWriter, r *http.Request) {
 
 	calculations, err := h.storage.ListCalculations(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "не удалось прочитать из базы"})
+		writeJSON(w, http.StatusBadGateway, errorResponse{Error: "storage-сервис недоступен"})
 		return
 	}
 
 	if calculations == nil {
-		calculations = []Calculation{}
+		calculations = []model.Calculation{}
 	}
 
 	writeJSON(w, http.StatusOK, calculations)
+}
+
+func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "api"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
