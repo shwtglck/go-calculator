@@ -5,6 +5,7 @@ import "time"
 // Calculation — одна запись в базе данных (одно вычисление).
 type Calculation struct {
 	ID        int       `json:"id"`
+	UserID    int       `json:"user_id"`
 	OperandA  float64   `json:"a"`
 	OperandB  float64   `json:"b"`
 	Operator  string    `json:"operator"`

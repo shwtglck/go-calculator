@@ -48,6 +48,7 @@ func main() {
 	addr := fmt.Sprintf(":%s", port)
 	log.Printf("storage-сервис запущен на http://localhost%s", addr)
 	log.Printf("POST http://localhost%s/calculations", addr)
+	log.Printf("POST http://localhost%s/register", addr)
 	log.Printf("GET  http://localhost%s/calculations", addr)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {

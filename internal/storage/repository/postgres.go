@@ -41,16 +41,23 @@ func (p *Postgres) Close() {
 }
 
 // SaveCalculation сохраняет результат вычисления в таблицу calculations.
-func (p *Postgres) SaveCalculation(ctx context.Context, a, b float64, operator string, result float64) (model.Calculation, error) {
+func (p *Postgres) SaveCalculation(
+	ctx context.Context,
+	userID int,
+	a, b float64,
+	operator string,
+	result float64,
+) (model.Calculation, error) {
 	const query = `
-		INSERT INTO calculations (operand_a, operand_b, operator, result)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, operand_a, operand_b, operator, result, created_at
+		INSERT INTO calculations (user_id, operand_a, operand_b, operator, result)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, user_id, operand_a, operand_b, operator, result, created_at
 	`
 
 	var calc model.Calculation
-	err := p.pool.QueryRow(ctx, query, a, b, operator, result).Scan(
+	err := p.pool.QueryRow(ctx, query, userID, a, b, operator, result).Scan(
 		&calc.ID,
+		&calc.UserID,
 		&calc.OperandA,
 		&calc.OperandB,
 		&calc.Operator,
@@ -62,17 +69,17 @@ func (p *Postgres) SaveCalculation(ctx context.Context, a, b float64, operator s
 	}
 
 	return calc, nil
-}
-
-// ListCalculations возвращает все записи из базы, от новых к старым.
-func (p *Postgres) ListCalculations(ctx context.Context) ([]model.Calculation, error) {
+}	
+	// ListCalculations возвращает все записи из базы, от новых к старым.
+func (p *Postgres) ListCalculations(ctx context.Context, userID int) ([]model.Calculation, error) {
 	const query = `
-		SELECT id, operand_a, operand_b, operator, result, created_at
+		SELECT id, user_id, operand_a, operand_b, operator, result, created_at
 		FROM calculations
+		WHERE user_id = $1
 		ORDER BY created_at DESC
 	`
 
-	rows, err := p.pool.Query(ctx, query)
+	rows, err := p.pool.Query(ctx, query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("чтение вычислений: %w", err)
 	}
@@ -83,6 +90,7 @@ func (p *Postgres) ListCalculations(ctx context.Context) ([]model.Calculation, e
 		var calc model.Calculation
 		if err := rows.Scan(
 			&calc.ID,
+			&calc.UserID,
 			&calc.OperandA,
 			&calc.OperandB,
 			&calc.Operator,
@@ -100,3 +108,51 @@ func (p *Postgres) ListCalculations(ctx context.Context) ([]model.Calculation, e
 
 	return calculations, nil
 }
+	func (p *Postgres) CreateUser(ctx context.Context, username, passwordHash string) (model.User, error) {
+		const query = `
+			INSERT INTO users (username, password_hash)
+			VALUES ($1, $2)
+			RETURNING id, username, password_hash, created_at
+		`
+	
+		var user model.User
+	
+		err := p.pool.QueryRow(ctx, query, username, passwordHash).Scan(
+			&user.ID,
+			&user.Username,
+			&user.PasswordHash,
+			&user.CreatedAt,
+		)
+	
+		if err != nil {
+			return model.User{}, fmt.Errorf("create user: %w", err)
+		}
+	
+		return user, nil
+	}
+	
+	// GetUserByUsername ищет пользователя по логину.
+	func (p *Postgres) GetUserByUsername(ctx context.Context, username string) (model.User, error) {
+		const query = `
+			SELECT id, username, password_hash, created_at
+			FROM users
+			WHERE username = $1
+		`
+	
+		var user model.User
+	
+		err := p.pool.QueryRow(ctx, query, username).Scan(
+			&user.ID,
+			&user.Username,
+			&user.PasswordHash,
+			&user.CreatedAt,
+		)
+	
+		if err != nil {
+			return model.User{}, fmt.Errorf("get user: %w", err)
+		}
+	
+		return user, nil
+	}
+
+

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"time"
+	"strconv"
 
 	"newstart/internal/model"
 )
@@ -81,12 +82,14 @@ func (c *HTTPStorageClient) SaveCalculation(ctx context.Context, a, b float64, o
 }
 
 // ListCalculations запрашивает историю вычислений из storage-сервиса.
-func (c *HTTPStorageClient) ListCalculations(ctx context.Context) ([]model.Calculation, error) {
+func (c *HTTPStorageClient) ListCalculations(ctx context.Context, userID int) ([]model.Calculation, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/calculations", nil)
 	if err != nil {
 		return nil, fmt.Errorf("создание запроса: %w", err)
 	}
-
+	
+	req.Header.Set("X-User-ID", strconv.Itoa(userID))
+	
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("запрос к storage-сервису: %w", err)

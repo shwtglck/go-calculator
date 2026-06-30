@@ -21,7 +21,7 @@ const (
 
 // Repository описывает сохранение вычислений в хранилище.
 type Repository interface {
-	SaveCalculation(ctx context.Context, a, b float64, operator string, result float64) (model.Calculation, error)
+	SaveCalculation(ctx context.Context, userID int, a, b float64, operator string, result float64) (model.Calculation, error)
 }
 
 // Consumer читает события из Kafka и сохраняет их через repository.
@@ -141,7 +141,7 @@ func (c *Consumer) handleMessage(ctx context.Context, payload []byte) error {
 		calc.Result,
 	)
 
-	saved, err := c.repo.SaveCalculation(ctx, calc.OperandA, calc.OperandB, calc.Operator, calc.Result)
+	saved, err := c.repo.SaveCalculation(ctx, calc.UserID, calc.OperandA, calc.OperandB, calc.Operator, calc.Result)
 	if err != nil {
 		log.Printf("kafka consumer: save to database error: %v", err)
 		return fmt.Errorf("save calculation: %w", err)
